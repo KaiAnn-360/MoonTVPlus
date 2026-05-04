@@ -40,21 +40,21 @@ import {
   Globe,
   Mail,
   Palette,
+  Plus,
   Settings,
+  Trash2,
   Tv,
   UserPlus,
   Users,
   Video,
-  Plus,
-  Trash2,
 } from 'lucide-react';
 import { GripVertical } from 'lucide-react';
 import { Fragment, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
-import { BookSource } from '@/lib/book.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { BookSource } from '@/lib/book.types';
 import {
   ALL_FEATURE_PERMISSION_KEYS,
   FEATURE_PERMISSION_OPTIONS,

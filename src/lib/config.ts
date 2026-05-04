@@ -810,6 +810,18 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
     adminConfig.MusicConfig.ProxyEnabled = true;
   }
 
+  if (!adminConfig.OPDSConfig) {
+    adminConfig.OPDSConfig = {
+      Enabled: false,
+      Sources: [],
+      CacheTTL: 10 * 60 * 1000,
+    };
+  } else {
+    if (adminConfig.OPDSConfig.CacheTTL === undefined) {
+      adminConfig.OPDSConfig.CacheTTL = 10 * 60 * 1000;
+    }
+  }
+
   return adminConfig;
 }
 
