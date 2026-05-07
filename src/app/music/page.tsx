@@ -114,6 +114,7 @@ export default function MusicPage() {
   const [loadingUserPlaylists, setLoadingUserPlaylists] = useState(false);
   const [loadingUserPlaylistSongs, setLoadingUserPlaylistSongs] = useState(false);
   const [loadingPlayAll, setLoadingPlayAll] = useState(false); // 播放全部加载状态
+  const [loadingCurrentPlayAll, setLoadingCurrentPlayAll] = useState(false); // 当前排行榜/详情页播放全部加载状态
   const [deletingPlaylistId, setDeletingPlaylistId] = useState<string | null>(null); // 正在删除的歌单ID
 
   useEffect(() => {
@@ -515,6 +516,77 @@ export default function MusicPage() {
     }
   };
 
+  // 当前排行榜歌单：播放全部
+  const handlePlayAllCurrentSongs = async () => {
+    setLoadingCurrentPlayAll(true);
+
+    try {
+      if (songs.length === 0) {
+        setToast({
+          message: '当前歌单为空',
+          type: 'error',
+          onClose: () => setToast(null),
+        });
+        return;
+      }
+
+      await fetch('/api/music/v2/history', { method: 'DELETE' });
+
+      const baseTime = Date.now();
+      const recordsToAdd = songs.map((song, i) => ({
+        song: {
+          songId: song.id,
+          source: song.platform,
+          songmid: song.songmid,
+          name: song.name,
+          artist: song.artist,
+          album: song.album,
+          cover: song.pic,
+          durationSec: song.duration || 0,
+          durationText: song.durationText,
+        },
+        playProgressSec: 0,
+        lastPlayedAt: baseTime + i,
+        playCount: 1,
+        lastQuality: quality,
+      }));
+
+      await fetch('/api/music/v2/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ records: recordsToAdd }),
+      });
+
+      const newRecords: PlayRecord[] = songs.map((song, i) => ({
+        platform: song.platform,
+        id: song.id,
+        playTime: 0,
+        duration: song.duration || 0,
+        timestamp: baseTime + i,
+      }));
+
+      setPlayRecords(newRecords);
+      setPlaylist(songs);
+      setPlaylistIndex(0);
+      await playSong(songs[0], 0);
+
+      setToast({
+        message: `已开始播放 ${currentPlaylistTitle || '当前歌单'}`,
+        type: 'success',
+        onClose: () => setToast(null),
+      });
+    } catch (error) {
+      console.error('排行榜播放全部失败:', error);
+      setToast({
+        message: '播放全部失败',
+        type: 'error',
+        onClose: () => setToast(null),
+      });
+    } finally {
+      setLoadingCurrentPlayAll(false);
+    }
+  };
+
   // 搜索歌曲
   const searchSongs = async () => {
     if (!searchKeyword.trim()) return;
@@ -541,6 +613,44 @@ export default function MusicPage() {
     e.stopPropagation(); // 阻止事件冒泡，避免触发播放
     setSongToAddToPlaylist(song);
     setShowAddToPlaylistModal(true);
+  };
+
+  // 稍后播放：追加到当前播放列表末尾，不立即播放
+  const handlePlayLater = (song: Song, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!currentSong && playlist.length === 0 && playRecords.length === 0) {
+      playSong(song, -1);
+      return;
+    }
+
+    const platform = song.platform || currentSource;
+    const exists = playlist.some((item) => item.id === song.id && item.platform === platform);
+
+    if (exists) {
+      setToast({
+        message: '歌曲已在播放列表中',
+        type: 'info',
+        onClose: () => setToast(null),
+      });
+      return;
+    }
+
+    const record: PlayRecord = {
+      platform,
+      id: song.id,
+      playTime: 0,
+      duration: song.duration || 0,
+      timestamp: Date.now(),
+    };
+
+    setPlayRecords((prev) => [...prev, record]);
+    setPlaylist((prev) => [...prev, { ...song, platform }]);
+    setToast({
+      message: '已加入稍后播放',
+      type: 'success',
+      onClose: () => setToast(null),
+    });
   };
 
   // 加载用户歌单列表
@@ -1478,7 +1588,7 @@ export default function MusicPage() {
       </header>
 
       {/* Main Content */}
-      <main className="pt-[120px] md:pt-[96px] pb-32 px-4 md:px-6">
+      <main className="pt-[136px] md:pt-[108px] pb-32 px-4 md:px-6">
         <div className="max-w-7xl mx-auto">
           {loading && (
             <div className="text-center text-zinc-500 py-8">加载中...</div>
@@ -1502,7 +1612,7 @@ export default function MusicPage() {
                       className="w-full text-left rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-4 py-3"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-8 text-sm text-zinc-500 font-mono shrink-0">
+                        <div className="w-8 text-sm text-zinc-500 dark:text-zinc-300 font-mono shrink-0">
                           {String(index + 1).padStart(2, '0')}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1535,12 +1645,36 @@ export default function MusicPage() {
           {currentView === 'songs' && !loading && (
             <div>
               <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-2">
-                <h2 className="text-xl font-bold text-white/80 tracking-tight truncate max-w-md">
-                  {currentPlaylistTitle}
-                </h2>
-                <span className="text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded text-white shrink-0">
-                  {songs.length} 首歌曲
-                </span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <h2 className="text-xl font-bold text-white/80 tracking-tight truncate max-w-md">
+                    {currentPlaylistTitle}
+                  </h2>
+                  <span className="text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded text-white shrink-0">
+                    {songs.length} 首歌曲
+                  </span>
+                </div>
+                <button
+                  onClick={handlePlayAllCurrentSongs}
+                  disabled={songs.length === 0 || loadingCurrentPlayAll}
+                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-zinc-700 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2 text-sm text-white shrink-0"
+                >
+                  {loadingCurrentPlayAll ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      处理中...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      播放全部
+                    </>
+                  )}
+                </button>
               </div>
               <div className="space-y-1">
                 {songs.map((song, index) => (
@@ -1553,7 +1687,7 @@ export default function MusicPage() {
                     }`}
                   >
                     <div
-                      className="text-center text-zinc-500 text-sm col-span-1"
+                      className="text-center text-zinc-500 dark:text-zinc-300 text-sm col-span-1"
                       onClick={() => playSong(song, index)}
                     >
                       {index + 1}
@@ -1577,15 +1711,27 @@ export default function MusicPage() {
                     >
                       {getSourceLabel()}
                     </div>
-                    <button
-                      onClick={(e) => handleAddToPlaylist(song, e)}
-                      className="text-zinc-500 hover:text-red-500 transition-colors p-1 col-span-1"
-                      title="添加到歌单"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </button>
+                    <div className="col-span-1 flex flex-col items-center justify-center gap-0.5 leading-none">
+                      <button
+                        onClick={(e) => handleAddToPlaylist(song, e)}
+                        className="text-zinc-500 hover:text-red-500 transition-colors p-0.5"
+                        title="添加到歌单"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => handlePlayLater(song, e)}
+                        className="text-zinc-500 hover:text-green-500 transition-colors p-0.5"
+                        title="稍后播放"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-9-9 9 9 0 019 9z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1717,7 +1863,7 @@ export default function MusicPage() {
                             key={`${song.platform}+${song.id}`}
                             className="flex items-center gap-3 p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
                           >
-                            <div className="text-zinc-500 text-sm w-8 text-center">{index + 1}</div>
+                            <div className="text-zinc-500 dark:text-zinc-300 text-sm w-8 text-center">{index + 1}</div>
                             {song.pic && (
                               <img
                                 src={song.pic}
@@ -2049,7 +2195,7 @@ export default function MusicPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
                   {playlist.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full text-[8px] flex items-center justify-center font-bold">
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full text-[8px] text-white flex items-center justify-center font-bold">
                       {playlist.length > 9 ? '9+' : playlist.length}
                     </span>
                   )}
